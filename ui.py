@@ -57,7 +57,7 @@ def inject_background_layer(
     b64: str,
     pos_x_percent: float = 9.5,
     pos_y_percent: float = 9,
-    scale: float = 1.17,
+    scale: float = 1,
     opacity: float = 1.0,
     scroll_mode: str = "fixed",
     darken: float = 0.18
@@ -342,3 +342,4 @@ st.markdown("""
 </style>
 <div class="footer-note">TDM Ops Console © 2025 — Internal Service Desk Platform</div>
 """, unsafe_allow_html=True)
+
