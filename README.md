@@ -1,30 +1,57 @@
-# BearPath
+# TDM Service Desk Utility
 
-**Smarter Routes. Stronger Teams.**  
-An internal scheduling and logistics automation platform developed by **Remy Martin Jesionka**.
+Internal tool for supporting service operations at  
+**Dumbell Man Fitness Equipment (TDM)**.
 
----
-
-## 🐻 Overview
-**BearPath** streamlines preventive maintenance (PM) scheduling, route optimization, and technician workload planning for internal operations at **The Dumbell Man Fitness Equipment (TDM)**.
-
-This system was designed as an **internal pilot release** — not for resale, redistribution, or public release.
+This utility assists with organizing service confirmations, 
+managing waiting-for-parts updates, and processing daily scheduling data.
 
 ---
 
-## ✨ Features
-- **Customer & Property Database** with address geocoding and coordinate mapping  
-- **Technician Scheduling** with PM caps, phases, and holiday logic  
-- **Streamlit Interface** for quick data entry and bulk job imports  
-- **Route Optimization Logic** using proximity and availability filters  
-- **CSV Export** for reporting and logistics planning  
-- **Integrated Logo and Banner UI** for an enhanced internal dashboard experience  
+## 📌 Overview
+
+The TDM Service Desk Utility is a lightweight internal dashboard used to:
+
+- Process Miracle exports for service confirmations
+- Generate clean CSV outputs for Power Automate workflows
+- Track Waiting For Parts status updates
+- Review phone logs and support requests
+- Provide a single interface for daily service desk tasks
+
+This tool is intended for **internal use only** and is not distributed outside TDM.
 
 ---
 
-## 🧭 How to Run (Internal Use)
-1. Open **Command Prompt**.  
-2. Navigate to the BearPath folder:
-   ```bat
-   cd "P:\Service\BearPath"
+## 🛠 Features
 
+- **Miracle Table Parser**  
+  Convert exported service data into clean, structured tables.
+
+- **Editable Data Grid**  
+  Update customer emails and service fields directly before exporting.
+
+- **CSV Export**  
+  Produces clean exports for shared Excel sheets or Power Automate logic.
+
+- **Waiting For Parts Manager**  
+  Track parts status, weeks on list, and vendor updates.
+
+- **Phone Log**  
+  Simple log for incoming customer calls and tasks.
+
+- **Streamlit Web Interface**  
+  Accessible from any internal workstation.
+
+---
+
+## 🚀 How to Run (Internal Use Only)
+
+Access the TDM Service Desk Utility from your browser.
+
+---
+
+## 🔒 Internal-Use Notice
+
+This application is intended solely for internal operations within  
+**Dumbell Man Fitness Equipment**.  
+Do not distribute or share externally.
