@@ -1,4 +1,7 @@
 streamlit==1.50.0
-pandas
+pandas>=2.0
+numpy
+python-dateutil
 openpyxl
 requests
+pillow
