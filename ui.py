@@ -1,4 +1,4 @@
-# ui.py — BearPath App (final clean)
+# ui.py — TDM Ops Console (final clean)
 
 import os
 import base64
@@ -22,7 +22,7 @@ from models import connect
 # --------------------------------------------------------------------
 # Initial Streamlit setup
 # --------------------------------------------------------------------
-st.set_page_config(page_title="BearPath", layout="wide")
+st.set_page_config(page_title="TDM Ops Console", layout="wide")
 
 # --------------------------------------------------------------------
 # DB connection (cached) + health indicator
@@ -34,7 +34,7 @@ def get_conn_v3(_version: str = "2025-11-04.3"):
 try:
     _con = get_conn_v3()
     _con.execute("SELECT 1")
-    st.sidebar.success("✅ Connected")
+    st.sidebar.success("✅ Connected to Database")
 except Exception as e:
     st.sidebar.error(f"❌ DB load failed: {e}")
 
@@ -42,7 +42,7 @@ except Exception as e:
 # Background image
 # --------------------------------------------------------------------
 APP_DIR = os.path.dirname(__file__)
-BANNER_FILE = os.path.join(APP_DIR, "bearpath_banner.jpg")
+BANNER_FILE = os.path.join(APP_DIR, "tdm_banner.jpg")   # renamed for TDM branding
 
 def _img_to_base64(path: str) -> str | None:
     try:
@@ -62,6 +62,10 @@ def inject_background_layer(
     scroll_mode: str = "fixed",
     darken: float = 0.18
 ):
+    """
+    Injects a decorative background image behind the app.
+    Clean + brand-neutral version for TDM.
+    """
     if not b64:
         st.markdown("""
         <style>
@@ -132,12 +136,12 @@ def inject_background_layer(
 inject_background_layer(banner64)
 
 # --------------------------------------------------------------------
-# SIDEBAR & TAB STYLING (unchanged green look)
+# SIDEBAR & TAB STYLING (TDM green palette)
 # --------------------------------------------------------------------
 st.markdown("""
 <style>
 
-/* Sidebar background + color */
+/* Sidebar background */
 [data-testid="stSidebar"] > div:first-child {
     background: linear-gradient(180deg, #163422 0%, #1f4a30 100%);
     border-right: 1px solid rgba(0,0,0,0.08);
@@ -147,12 +151,12 @@ st.markdown("""
     min-height: 125vh;
 }
 
-/* General text color */
+/* Sidebar text */
 [data-testid="stSidebar"] * {
     color: #ecf2ee !important;
 }
 
-/* Inputs inside sidebar */
+/* Inputs */
 [data-testid="stSidebar"] input,
 [data-testid="stSidebar"] textarea,
 [data-testid="stSidebar"] select {
@@ -160,8 +164,8 @@ st.markdown("""
     color: #222 !important;
 }
 
-/* Tab styling (main Service / Logistics tabs) */
-:root{
+/* Tabs (top level) */
+:root {
   --main-tab-bg: rgba(255,255,255,0.88);
   --main-tab-text: #163422;
   --main-tab-border: #9dc2a9;
@@ -174,11 +178,11 @@ st.markdown("""
   --main-tab-pad-x: 1.10rem;
 }
 
-/* Top-level tabs */
 .stTabs [data-baseweb="tab-list"]{
   margin-top: .5rem !important;
   border-bottom: none !important;
 }
+
 .stTabs [data-baseweb="tab"] {
   border: 2px solid var(--main-tab-border) !important;
   border-radius: var(--main-tab-radius) !important;
@@ -187,44 +191,45 @@ st.markdown("""
   padding: var(--main-tab-pad-y) var(--main-tab-pad-x) !important;
   font-weight: 700 !important;
   font-size: var(--main-tab-font) !important;
-  line-height: 1 !important;
-  box-shadow: none !important;
   transition: background .15s ease-in-out, transform .15s ease-in-out;
 }
+
 .stTabs [data-baseweb="tab"]:hover {
   background: var(--main-tab-hover-bg) !important;
   transform: translateY(-1px);
 }
+
 .stTabs [aria-selected="true"][data-baseweb="tab"] {
   background: var(--main-tab-active-bg) !important;
   color: var(--main-tab-active-text) !important;
   border-color: var(--main-tab-active-bg) !important;
 }
-.stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+
+.stTabs [data-baseweb="tab-highlight"] { display:none !important; }
 
 </style>
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------
-# WFP Sidebar Readability Fix
+# WFP Sidebar Readability Fix (TDM version)
 # --------------------------------------------------------------------
 st.markdown("""
 <style>
 
-/* Make sidebar headers darker */
-[data-testid="stSidebar"] h2, 
-[data-testid="stSidebar"] h3, 
+/* Sidebar section headers */
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
 [data-testid="stSidebar"] h4 {
     color: #f1f5f2 !important;
 }
 
-/* Make sub-label text readable */
+/* Label styling */
 [data-testid="stSidebar"] .sb-label {
-    color: #e7efe8 !important; 
+    color: #e7efe8 !important;
     font-weight: 700 !important;
 }
 
-/* Buttons inside sidebar (like Recompute Weeks) */
+/* Buttons inside sidebar */
 [data-testid="stSidebar"] .stButton > button {
     background-color: #e8f2ec !important;
     color: #163422 !important;
@@ -240,25 +245,24 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------------------------------------------------------------------
-# MAIN NAVIGATION: Service / Logistics
+# MAIN NAVIGATION
 # --------------------------------------------------------------------
 main_tabs = st.tabs(["Service", "Logistics"])
-
-# Global sidebar container (shared, but we control who writes to it)
 sidebar_root = st.sidebar.container()
 
 # ====================================================================
-# SERVICE TAB — radio-based subtabs (pills) so sidebar is per-page
+# SERVICE TAB — radio-based subtabs
 # ====================================================================
 with main_tabs[0]:
 
-    # CSS to make the radio look like green “bubbles”
+    # Subtab styling
     st.markdown("""
     <style>
     .subtabs-radio .stRadio svg { display:none !important; }
     .subtabs-radio .stRadio input[type="radio"] { display:none !important; }
     .subtabs-radio .stRadio > div { gap: .55rem !important; }
     .subtabs-radio .stRadio [role="radiogroup"] { flex-wrap: wrap; }
+
     .subtabs-radio .stRadio label > div[role="radio"]{
       border: 2px solid #cfe0d4 !important;
       border-radius: 10px !important;
@@ -267,10 +271,9 @@ with main_tabs[0]:
       padding: .55rem .95rem !important;
       font-weight: 700 !important;
       font-size: 16px !important;
-      line-height: 1 !important;
       transition: background .15s ease-in-out, transform .15s ease-in-out;
     }
-    .subtabs-radio .stRadio label > div[role="radio"]:hover{
+    .subtabs-radio .stRadio label > div[role="radio"]:hover {
       background: #e7f1ea !important;
       transform: translateY(-1px);
     }
@@ -301,39 +304,30 @@ with main_tabs[0]:
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Clear sidebar before rendering the selected subpage
     sidebar_root.empty()
 
-    # ---- Route to the right subtab (only ONE of these runs each rerun) ----
     if service_page == "Scheduler":
         render_scheduler_tab(sidebar_root)
-
     elif service_page == "Confirmations":
         render_confirmations_tab()
-
     elif service_page == "Waiting for Parts":
         render_wfp_tab(sidebar_root)
-
     elif service_page == "Phone Call Log":
         render_phone_log_tab(sidebar_root)
-
     elif service_page == "Coordinate Confidence":
         render_coordinate_confidence_tab(sidebar_root)
 
-
 # ====================================================================
-# LOGISTICS TAB — Calendar placeholder
+# LOGISTICS TAB
 # ====================================================================
 with main_tabs[1]:
     sidebar_root.empty()
 
-    # You can turn this into real tabs later; for now just Calendar
     st.header("📆 Logistics Calendar")
     st.info("Calendar functionality coming soon.")
 
-
 # ====================================================================
-# FOOTER
+# FOOTER — TDM Branding
 # ====================================================================
 st.markdown("""
 <style>
@@ -346,8 +340,5 @@ st.markdown("""
     opacity: .85;
 }
 </style>
-<div class="footer-note">BearPath © 2025 — Internal Operations Platform</div>
+<div class="footer-note">TDM Ops Console © 2025 — Internal Service Desk Platform</div>
 """, unsafe_allow_html=True)
-
-
-
