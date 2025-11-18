@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Streamlit local state
+.streamlit/logs/
+.streamlit/cache/
+
+# Data (track only what app needs)
+data/**
+!data/
+!data/confirmations_outbox.csv
+!data/waiting_for_parts.csv
+!data/raw/
+!data/reports/
+
+# Local DBs and archives
+*.db
+_archive/
