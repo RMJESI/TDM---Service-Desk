@@ -1,5 +1,9 @@
 # ======================================================================
-# scheduler.py — Clean Version (Triple Pulse Glow + Sync at Bottom)
+# scheduler.py — TDM Ops Console Scheduler
+# Internal scheduling interface used by TDM Service Desk
+#
+# Rebranded to remove external system names and personal identifiers.
+# No functionality has been changed.
 # ======================================================================
 
 import os
@@ -19,7 +23,7 @@ from models import (
 )
 
 # -------------------------------------------------
-# Helper reused from UI
+# Helper: parse holiday input
 # -------------------------------------------------
 def parse_holidays(txt: str):
     out = set()
@@ -35,8 +39,9 @@ def parse_holidays(txt: str):
             pass
     return out
 
+
 # -------------------------------------------------
-# Utility for grouping notes
+# Helper for grouping notes
 # -------------------------------------------------
 def _format_grouped_notes(notes: list[str], max_unique: int = 12) -> str:
     if not notes:
@@ -47,49 +52,46 @@ def _format_grouped_notes(notes: list[str], max_unique: int = 12) -> str:
     suffix = f"  •  +{extra} more…" if extra > 0 else ""
     return "Notes: " + "  •  ".join(items) + suffix
 
+
 # -------------------------------------------------
-# Helper to write DB to temp file
+# Helper: materialize DB to tempfile for scheduling engine
 # -------------------------------------------------
 def _materialize_db_to_tempfile(con) -> str:
     return export_db_to_tempfile(con)
 
+
 # -------------------------------------------------
-# Sidebar
+# Sidebar (TDM-branded styling)
 # -------------------------------------------------
 def sidebar_for_service_scheduler_v2(sidebar):
 
-    # 🔧 Sidebar readability fix (selectbox text, inputs, labels, arrows)
+    # Improve sidebar readability (dark/light contrast fixes)
     st.markdown("""
     <style>
-    /* --------------------------------------------
-       Sidebar Dropdown + Input Contrast Fix
-       -------------------------------------------- */
-
-    /* Selectbox label text ("Region", "Technician") */
+    /* Sidebar label text */
     [data-testid="stSidebar"] .stSelectbox label p {
         color: #f5faf5 !important;
         font-weight: 600 !important;
     }
 
-    /* Selected value text ("CA", "Amador") */
+    /* Selectbox current value */
     [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * {
-        color: #1a1a1a !important;   /* DARKER TEXT */
-        font-weight: 600 !important; /* Optional: make text slightly bolder */
-    }
-
-    /* Input text inside text inputs */
-    [data-testid="stSidebar"] input {
-        color: #1a1a1a !important;   /* Dark input text */
+        color: #1a1a1a !important;
         font-weight: 600 !important;
     }
 
+    /* Text inputs */
+    [data-testid="stSidebar"] input {
+        color: #1a1a1a !important;
+        font-weight: 600 !important;
+    }
 
-    /* Dropdown arrow icon */
+    /* Dropdown arrow */
     [data-testid="stSidebar"] .stSelectbox svg {
         color: #ffffff !important;
     }
 
-    /* Dropdown menu items (keep dark on light for readability) */
+    /* Dropdown menu items */
     [data-testid="stSidebar"] .stSelectbox [role="listbox"] div[role="option"] * {
         color: #1a1a1a !important;
     }
@@ -133,21 +135,20 @@ def sidebar_for_service_scheduler_v2(sidebar):
         holidays_text, keep_open_toggle, n_workdays_open
     )
 
+
 # ======================================================================
 # MAIN TAB
 # ======================================================================
-
 def render_scheduler_tab(sidebar_root):
 
     sbx = sidebar_root.container()
-
     (
         month, region, tech_name, pm_cap_default,
         holidays_text, keep_open_toggle, n_workdays_open
     ) = sidebar_for_service_scheduler_v2(sbx)
 
     # -------------------------------------------------
-    # Button Styling
+    # Button styling
     # -------------------------------------------------
     st.markdown("""
     <style>
@@ -200,11 +201,14 @@ def render_scheduler_tab(sidebar_root):
                 keep_first_n_workdays_open=int(n_workdays_open) if keep_open_toggle else 0,
             )
         finally:
-            try: os.unlink(db_path)
-            except: pass
+            try:
+                os.unlink(db_path)
+            except:
+                pass
 
         st.success("Schedule created.")
 
+        # Display schedule day-by-day
         for day, jobs in sorted(sched.items()):
             st.subheader(day.isoformat())
             rows = []
@@ -215,14 +219,14 @@ def render_scheduler_tab(sidebar_root):
                     if getattr(p, "reasoning", None):
                         notes.append(p.reasoning)
                 else:
-                    hrs = round((p.end - p.start).total_seconds()/3600, 2)
+                    hrs = round((p.end - p.start).total_seconds() / 3600, 2)
                     rows.append({
                         "Property": p.property,
                         "Type": p.type,
                         "Start": p.start.strftime("%H:%M"),
                         "End": p.end.strftime("%H:%M"),
                         "Hours": hrs,
-                        "Drive(min)": round(p.drive_min_from_prev,1),
+                        "Drive(min)": round(p.drive_min_from_prev, 1),
                         "Reason": p.reasoning
                     })
 
@@ -232,7 +236,7 @@ def render_scheduler_tab(sidebar_root):
                 st.caption("Notes: " + "; ".join(notes))
 
     # -------------------------------------------------
-    # ADD JOBS
+    # ADD JOBS UI
     # -------------------------------------------------
     with st.expander("📥 Add Jobs"):
         bulk_text = st.text_area("Paste names (one per line)", "", height=200)
@@ -288,59 +292,54 @@ def render_scheduler_tab(sidebar_root):
                 st.warning(fail)
 
     # ==================================================================
-    # DANGER ZONE — Clear ALL Jobs (Balloons only)
+    # DANGER ZONE — Clear ALL Jobs
     # ==================================================================
-    
     st.divider()
     with st.expander("⚠️ Danger Zone — Clear ALL Jobs"):
         st.warning("Permanently deletes ALL rows in month_jobs.")
-    
+
         if st.button("🗑️ Clear ALL Jobs", key="clear_all"):
             con = connect()
             con.execute("DELETE FROM month_jobs")
             con.commit()
-    
+
             st.success("All jobs cleared!")
-    
-            # 🎈 Bring balloons back!
+
             try:
                 st.balloons()
             except:
                 pass
-    
-            # Give the animation time to play before reload
+
             import time
             time.sleep(3.0)
-    
+
             st.rerun()
 
-
     # ==================================================================
-    # ONE CLICK SYNC — BELOW Danger Zone
+    # ONE-CLICK SYNC — After Danger Zone
     # ==================================================================
-
     st.divider()
     with st.expander("🔁 One-Click Data Sync"):
-        st.caption("Runs all data sync operations safely in the correct order.")
+        st.caption("Runs all data synchronization tasks safely.")
 
         if st.button("Run Full Sync", key="full_sync"):
             con = connect()
 
-            # Unlock sheet import
+            # Reset import marker
             con.execute("DELETE FROM _imports WHERE marker='props_google_csv'")
             con.commit()
 
-            # Force import Google Sheet
+            # Import Google Sheet (idempotent)
             try:
                 _import_properties_from_sheet(con)
                 st.success("Google Sheet imported.")
             except Exception as e:
                 st.error(f"Import failed: {e}")
 
-            # Reset DB cache
+            # Reset cache
             st.cache_resource.clear()
 
-            # Sync Hours
+            # Sync hours from properties → month_jobs
             con.execute("""
                 UPDATE month_jobs
                 SET duration_hours = (
@@ -352,4 +351,5 @@ def render_scheduler_tab(sidebar_root):
             """)
             con.commit()
 
-            st.success("✔ All sync tasks completed successfully!")
+            st.success("✔ Full sync completed successfully.")
+
