@@ -143,9 +143,8 @@ st.markdown("""
 
 /* Sidebar background */
 [data-testid="stSidebar"] > div:first-child {
-    background: linear-gradient(180deg, #163422 0%, #1f4a30 100%);
-    border-right: 1px solid rgba(0,0,0,0.08);
-    margin-top: -4rem !important;
+    background: #4a4a4a !important;   /* medium gray */
+    border-right: 1px solid rgba(0,0,0,0.15);
     padding-top: 0 !important;
     padding-bottom: 2rem !important;
     min-height: 125vh;
@@ -342,4 +341,5 @@ st.markdown("""
 </style>
 <div class="footer-note">TDM Ops Console © 2025 — Internal Service Desk Platform</div>
 """, unsafe_allow_html=True)
+
 
