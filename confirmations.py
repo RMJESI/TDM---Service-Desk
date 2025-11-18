@@ -1,4 +1,6 @@
-# confirmations.py — Miracle Parsing + Editable Table (No Refresh) + CSV Export
+# confirmations.py — TDM Service Desk Version
+# Miracle Parsing + Editable Table (No Refresh) + CSV Export
+# Fully rebranded for The Dumbell Man (TDM)
 
 import streamlit as st
 import pandas as pd
@@ -6,7 +8,7 @@ import io
 
 
 # ---------------------------------------------------------------
-# Miracle Parser
+# Miracle Parser (unchanged logic)
 # ---------------------------------------------------------------
 def parse_miracle_table(text: str) -> pd.DataFrame:
     """Parses Miracle-pasted tab-delimited data and returns normalized rows."""
@@ -72,22 +74,39 @@ def parse_miracle_table(text: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------
-# Confirmations Page
+# TDM Confirmations Page
 # ---------------------------------------------------------------
 def render_confirmations_tab():
-    st.header("Service Confirmations")
 
-    # Session data
+    # -----------------------------------------------------------
+    # TDM Branding Header
+    # -----------------------------------------------------------
+    st.markdown(
+        """
+        <h1 style="color:#FFFFFF; font-weight:700; margin-bottom:0px;">
+            TDM Service Desk — Service Confirmations
+        </h1>
+        <p style="color:#CCCCCC; margin-top:0px;">
+            Process Miracle exports and generate clean CSV outputs for Power Automate.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Session
     if "parsed_confirmations" not in st.session_state:
         st.session_state["parsed_confirmations"] = None
 
     # ============================================================
     # Step 1 — Paste Miracle Table
     # ============================================================
-    st.subheader("1. Paste Miracle Table")
+    st.markdown(
+        "<h3 style='color:#7A001F;'>1. Paste Miracle Table</h3>",
+        unsafe_allow_html=True,
+    )
 
     miracle_text = st.text_area(
-        "Paste with header row:",
+        "Paste data including the header row:",
         placeholder=(
             "TaskID\tCompany Name\tRequester\tScheduled Date\tTask Type\tTech Name\tCustomer Email\n"
             "0037580-2\tMesa Verde\tOctavio\t11/10/2025 6:00 AM\tSVC Repair\tSub-Contractor\temail@example.com"
@@ -96,24 +115,33 @@ def render_confirmations_tab():
         key="miracle_input",
     )
 
-    if st.button("Validate & Parse Table", type="primary", key="parse_btn"):
+    if st.button(
+        "Validate & Parse Table",
+        type="primary",
+        key="parse_btn",
+        help="Parse the Miracle export into a structured table.",
+    ):
         if not miracle_text.strip():
-            st.warning("Paste Miracle data first.")
+            st.warning("Paste Miracle data before parsing.")
         else:
             try:
                 st.session_state["parsed_confirmations"] = parse_miracle_table(miracle_text)
-                st.success("Successfully parsed table!")
+                st.success("Table parsed successfully.")
             except Exception as e:
-                st.error(f"Error parsing: {e}")
+                st.error(f"Error parsing table: {e}")
 
     parsed_df = st.session_state.get("parsed_confirmations")
 
     # ============================================================
-    # Step 2 — Editable Parsed Table (NO REFRESH WHILE TYPING)
+    # Step 2 — Editable Parsed Table (no refresh on keystroke)
     # ============================================================
     if parsed_df is not None:
-        st.subheader("2. Review & Edit Rows")
+        st.markdown(
+            "<h3 style='color:#7A001F;'>2. Review & Edit Rows</h3>",
+            unsafe_allow_html=True,
+        )
 
+        # Wrap in form so it doesn't rerun on every keystroke
         with st.form("edit_table_form"):
             edited_df = st.data_editor(
                 parsed_df,
@@ -122,25 +150,31 @@ def render_confirmations_tab():
                 key="editable_confirmations_editor",
             )
 
-            submitted = st.form_submit_button("Save Edits", type="primary")
+            submitted = st.form_submit_button(
+                "Save Edits",
+                type="primary",
+            )
 
         if submitted:
             st.session_state["parsed_confirmations"] = edited_df
-            st.success("Edits saved!")
+            st.success("Edits saved.")
 
-        st.markdown("---")
+        st.markdown("<hr style='border-color:#3C3C3C;'>", unsafe_allow_html=True)
 
         # ========================================================
         # Step 3 — Export CSV
         # ========================================================
-        st.subheader("3. Export to CSV")
+        st.markdown(
+            "<h3 style='color:#7A001F;'>3. Export to CSV</h3>",
+            unsafe_allow_html=True,
+        )
 
         csv_bytes = st.session_state["parsed_confirmations"].to_csv(index=False).encode("utf-8")
 
         st.download_button(
             label="📥 Download CSV",
             data=csv_bytes,
-            file_name="service_confirmations.csv",
+            file_name="tdm_service_confirmations.csv",
             mime="text/csv",
             type="primary",
         )
