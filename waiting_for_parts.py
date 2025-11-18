@@ -1,5 +1,4 @@
-# waiting_for_parts.py
-# Extracted exactly from ui.py and wrapped cleanly into a function.
+# waiting_for_parts.py — TDM Ops Console Edition
 
 import streamlit as st
 import pandas as pd
@@ -11,47 +10,44 @@ from persist_waiting_parts import load_wfp, save_wfp, weekly_sync
 # -------------------------------------------------
 def render_wfp_tab(sidebar_root):
 
-    # ---------- Scoped sidebar CSS (Waiting for Parts only) ----------
+    # ---------- Sidebar CSS (dark red / black / gray / white palette) ----------
     st.markdown("""
     <style>
-    
-      /* --- Maintenance label --- */
+
+      /* Sidebar label */
       [data-testid="stSidebar"] .sb-label {
           color: #ffffff !important;
           font-weight: 700 !important;
           font-size: 1rem !important;
       }
-    
-      /* --- ALL buttons inside the sidebar --- */
+
+      /* Buttons inside sidebar */
       [data-testid="stSidebar"] .stButton > button {
-          background-color: #f7faf8 !important;
-          color: #163422 !important;
-          border: 1px solid #9dc2a9 !important;
+          background-color: #ffffff !important;
+          color: #2a2a2a !important;
+          border: 1px solid #6b6b6b !important;
           font-weight: 700 !important;
           border-radius: 8px !important;
       }
-    
-      /* Ensure icon + text inside the button stay dark */
+
+      /* Ensure inner text/icons stay dark */
       [data-testid="stSidebar"] .stButton > button * {
-          color: #163422 !important;
-          fill: #163422 !important;
+          color: #2a2a2a !important;
+          fill: #2a2a2a !important;
       }
-    
-      /* Hover state */
+
+      /* Hover */
       [data-testid="stSidebar"] .stButton > button:hover {
-          background-color: #e8f2ed !important;
-          color: #163422 !important;
+          background-color: #f0f0f0 !important;
+          color: #1a1a1a !important;
       }
-    
+
     </style>
     """, unsafe_allow_html=True)
 
-
-
-    # ---------- Sidebar controls for this page ----------
+    # ---------- Sidebar controls ----------
     sbx = sidebar_root.container()
     with sbx:
-        # wrap all WFP sidebar content in a scoped div
         st.markdown("<div class='wfp-sidebar'>", unsafe_allow_html=True)
 
         st.header("Waiting for Parts")
@@ -63,6 +59,8 @@ def render_wfp_tab(sidebar_root):
         )
         st.divider()
         st.markdown('<span class="sb-label">Maintenance</span>', unsafe_allow_html=True)
+
+        # Recompute weeks
         if st.button("🧮 Recompute Weeks (today)", key="wfp_recompute_btn_sidebar"):
             def _recompute_weeks_from_first_seen(df_in: pd.DataFrame, as_of_str: str) -> pd.DataFrame:
                 out = df_in.copy()
@@ -78,33 +76,37 @@ def render_wfp_tab(sidebar_root):
                 return out
 
             _df_now = load_wfp().copy()
-            # ensure cols (safe)
-            for c in ["Task ID","Property","PO","Status","Notes","Last Updated",
-                      "First Seen","Last Seen","Weeks On List","This Week"]:
+
+            # Ensure columns exist
+            need_cols = [
+                "Task ID","Property","PO","Status","Notes","Last Updated",
+                "First Seen","Last Seen","Weeks On List","This Week"
+            ]
+            for c in need_cols:
                 if c not in _df_now.columns:
                     _df_now[c] = ""
+
             fixed = _recompute_weeks_from_first_seen(_df_now, date.today().isoformat())
-            save_wfp(fixed, message=f"Waiting for Parts: recompute weeks as of {date.today().isoformat()}")
+            save_wfp(fixed, message=f"WFP: recompute weeks as of {date.today().isoformat()}")
             st.success("Weeks On List recomputed.")
             st.rerun()
 
-        # close the scoped div
         st.markdown("</div>", unsafe_allow_html=True)
 
     # -------------------------------------------------
-    # STATUS METADATA
+    # STATUS COLORS — TDM palette
     # -------------------------------------------------
     STATUS_META = {
-        "Backordered": {"label":"Backordered", "color":"#3B82F6"},
-        "Ordered Recently": {"label":"Ordered Recently", "color":"#6EE7B7"},
-        "Has Tracking Info": {"label":"Has Tracking Info", "color":"#10B981"},
-        "Ready": {"label":"Ready", "color":"#065F46"},
-        "Upholstery": {"label":"Upholstery", "color":"#FB923C"},
-        "Direct Shipped": {"label":"Direct Shipped", "color":"#F472B6"},
-        "Need to Email Vendor": {"label":"Need to Email Vendor", "color":"#8B5CF6"},
-        "Need to Email Team": {"label":"Need to Email Team", "color":"#FCA5A5"},
-        "Other": {"label":"Other", "color":"#9CA3AF"},
-        "": {"label":"(Unset)", "color":"#D1D5DB"},
+        "Backordered":          {"color":"#8b1e3f"},   # Maroon-ish red
+        "Ordered Recently":     {"color":"#b84156"},   # Lighter red
+        "Has Tracking Info":    {"color":"#5f7c8a"},   # Steel blue gray
+        "Ready":                {"color":"#1d1d1d"},   # Black
+        "Upholstery":           {"color":"#c05621"},   # Burnt orange
+        "Direct Shipped":       {"color":"#a22a7e"},   # Dark magenta
+        "Need to Email Vendor": {"color":"#6c3fbb"},   # Purple
+        "Need to Email Team":   {"color":"#d65d5d"},   # Muted red
+        "Other":                {"color":"#999999"},   # Gray
+        "":                     {"color":"#d7d7d7"},   # Unset
     }
 
     columns_order = [
@@ -118,11 +120,12 @@ def render_wfp_tab(sidebar_root):
         "Other",
         "Ready",
     ]
+
     STATUS_RANK = {name: i for i, name in enumerate(columns_order)}
-    STATUS_RANK["Ready"] = 999
+    STATUS_RANK["Ready"] = 999  # always pushed to bottom
 
     # -------------------------------------------------
-    # COUNTER STYLING
+    # COUNTERS
     # -------------------------------------------------
     st.markdown("""
     <style>
@@ -132,30 +135,36 @@ def render_wfp_tab(sidebar_root):
         border-radius: 12px;
         padding: 14px 18px;
         font-weight: 800;
-        border: 2px solid rgba(0,0,0,0.06);
+        border: 2px solid rgba(0,0,0,0.08);
         box-shadow: 0 2px 6px rgba(0,0,0,0.06);
         min-height: 68px;
+        background:#ffffff;
       }
-      .wfp-counter .num { font-size: 28px; line-height: 1; }
-      .wfp-counter .lbl { font-size: 17px; line-height: 1.15; opacity: .9; }
+      .wfp-counter .num { font-size: 28px; line-height: 1; color:#1d1d1d; }
+      .wfp-counter .lbl { font-size: 17px; color:#4a4a4a; }
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown("### ⚙️ Waiting for Parts")
 
     # -------------------------------------------------
-    # WEEKLY SYNC (Miracle CSV upload)
+    # WEEKLY SYNC (Upload)
     # -------------------------------------------------
-    with st.expander("📥 Weekly sync from Miracle (Task ID, Property, PO)"):
+    with st.expander("📥 Weekly sync (Miracle export)"):
 
-        st.caption("Upload this week's CSV. New Task IDs are added; carry-overs keep Status/Notes and recompute **Weeks On List**.")
+        st.caption("Upload this week's CSV. New Task IDs added. Old rows updated safely.")
 
         if "wfp_processed_signature" not in st.session_state:
             st.session_state["wfp_processed_signature"] = None
         if "wfp_uploader_nonce" not in st.session_state:
             st.session_state["wfp_uploader_nonce"] = 0
 
-        sync_date = st.date_input("Sync date", value=date.today(), format="YYYY-MM-DD", key="wfp_sync_date")
+        sync_date = st.date_input(
+            "Sync date",
+            value=date.today(),
+            format="YYYY-MM-DD",
+            key="wfp_sync_date"
+        )
 
         uploader_key = f"wfp_seed_uploader_{st.session_state['wfp_uploader_nonce']}"
         seed_file = st.file_uploader("Upload CSV", type=["csv"], key=uploader_key)
@@ -171,31 +180,42 @@ def render_wfp_tab(sidebar_root):
 
         sig = _file_sig(seed_file)
 
-        process_clicked = st.button("🚀 Process upload", disabled=(seed_file is None), key="wfp_process_btn")
+        process_clicked = st.button(
+            "🚀 Process upload",
+            disabled=(seed_file is None),
+            key="wfp_process_btn"
+        )
 
         if process_clicked and seed_file is not None:
             try:
-                if sig is not None and sig == st.session_state["wfp_processed_signature"]:
-                    st.info("This file was already processed. Upload a new CSV or change the date.")
+                if sig == st.session_state["wfp_processed_signature"]:
+                    st.info("This file has already been processed.")
                 else:
                     seed_df = pd.read_csv(seed_file, dtype=str).fillna("")
                     merged = weekly_sync(seed_df, as_of=sync_date.isoformat())
-                    save_wfp(merged, message=f"Waiting for Parts: weekly sync {sync_date.isoformat()}")
+                    save_wfp(merged, message=f"WFP weekly sync {sync_date.isoformat()}")
 
+                    # Avoid duplicate processing
                     st.session_state["wfp_processed_signature"] = sig
                     st.session_state["wfp_uploader_nonce"] += 1
+
                     st.success("Weekly sync complete.")
                     st.toast("Weekly sync complete.", icon="✅")
                     st.rerun()
+
             except Exception as e:
                 st.error(f"Weekly sync failed: {e}")
 
     # -------------------------------------------------
-    # LOAD & NORMALIZE TABLE
+    # LOAD TABLE
     # -------------------------------------------------
     df = load_wfp().copy()
-    for c in ["Task ID","Property","PO","Status","Notes","Last Updated",
-              "First Seen","Last Seen","Weeks On List","This Week"]:
+
+    need_cols = [
+        "Task ID","Property","PO","Status","Notes","Last Updated",
+        "First Seen","Last Seen","Weeks On List","This Week"
+    ]
+    for c in need_cols:
         if c not in df.columns:
             df[c] = ""
 
@@ -203,24 +223,25 @@ def render_wfp_tab(sidebar_root):
     df["This Week"] = df["This Week"].astype(str).str.lower().isin(["1","true","yes","y","t"])
 
     # -------------------------------------------------
-    # SUMMARY COUNTERS
+    # TOP FILTERS
     # -------------------------------------------------
     act1, act2 = st.columns([2, 1])
     with act1:
-        hide_ready = st.checkbox("Hide ‘Ready’ (active work only)", value=False, key="wfp_hide_ready")
+        hide_ready = st.checkbox("Hide ‘Ready’ rows", value=False, key="wfp_hide_ready")
     with act2:
-        st.caption("Tip: Delete rows manually after ~2 weeks in ‘Ready’ status.")
+        st.caption("Tip: Delete Ready rows after ~2 weeks.")
 
+    # Status counts
     counts = {k: int((df["Status"] == k).sum()) for k in STATUS_META if k}
 
+    # Counter tiles
     counter_cols = st.columns(len(columns_order))
     for key, col in zip(columns_order, counter_cols):
-        meta = STATUS_META[key]
         col.markdown(
             f"""
-            <div class="wfp-counter" style="background:{meta['color']}22;border-color:{meta['color']}66;">
+            <div class="wfp-counter">
               <div class="num">{counts.get(key,0)}</div>
-              <div class="lbl">{meta['label']}</div>
+              <div class="lbl">{key}</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -229,11 +250,11 @@ def render_wfp_tab(sidebar_root):
     st.divider()
 
     # -------------------------------------------------
-    # FILTERING
+    # SEARCH / FILTER
     # -------------------------------------------------
     f1, f2 = st.columns([2,1])
     with f1:
-        q = st.text_input("Search (Task ID / Property / PO / Notes)", "")
+        q = st.text_input("Search", "")
     with f2:
         flt = st.selectbox("Filter by Status", ["All"] + columns_order)
 
@@ -247,51 +268,51 @@ def render_wfp_tab(sidebar_root):
         view = view[view["Status"] == flt]
 
     # -------------------------------------------------
-    # SORTING ORDER
+    # SORT
     # -------------------------------------------------
-    def _sort_view(df_in: pd.DataFrame) -> pd.DataFrame:
+    def _sort(df_in):
         df2 = df_in.copy()
-        df2["_rank"] = df2["Status"].map(STATUS_RANK).fillna(500).astype(int)
-        df2 = df2.sort_values(by=["_rank","Property","Task ID"], ascending=[True, True, True])
-        return df2.drop(columns=["_rank"], errors="ignore")
+        df2["_rank"] = df2["Status"].map(STATUS_RANK).fillna(500)
+        return df2.sort_values(by=["_rank","Property","Task ID"]).drop(columns=["_rank"], errors="ignore")
 
-    view = _sort_view(view)
+    view = _sort(view)
 
     # -------------------------------------------------
-    # COLOR GRID HELPER
+    # COLOR GRID
     # -------------------------------------------------
-    def _colorize_wfp(view_df: pd.DataFrame):
-        need_cols = ["Task ID","Property","PO","Status","Notes","Last Updated",
-                     "First Seen","Last Seen","Weeks On List","This Week"]
+    def _color_grid(vdf):
+        need_cols = [
+            "Task ID","Property","PO","Status","Notes","Last Updated",
+            "First Seen","Last Seen","Weeks On List","This Week"
+        ]
         for c in need_cols:
-            if c not in view_df.columns:
-                view_df[c] = ""
+            if c not in vdf.columns:
+                vdf[c] = ""
 
         def _row_style(r):
             color = STATUS_META.get(r.get("Status",""), STATUS_META[""])["color"]
-            bg = f"background-color: {color}22"
-            bd = f"border-bottom: 1px solid {color}55"
-            return [f"{bg}; {bd}" for _ in r]
+            return [f"background-color:{color}22; border-bottom:1px solid {color}55;" for _ in r]
 
         return (
-            view_df[need_cols]
+            vdf[need_cols]
             .style.apply(_row_style, axis=1)
             .set_properties(**{"white-space":"pre-wrap"})
         )
 
     # -------------------------------------------------
-    # RENDER MODE
+    # VIEW MODE
     # -------------------------------------------------
-    mode = st.session_state.get("wfp_view", "Grid view (bulk)")
+    if st.session_state.get("wfp_view") == "Grid view (bulk)":
 
-    if mode == "Grid view (bulk)":
         grid = view.copy()
         grid["Status"] = grid["Status"].where(grid["Status"].isin(columns_order + [""]), "")
-        grid["Last Updated"] = pd.to_datetime(grid["Last Updated"], errors="coerce").dt.date
-        grid["First Seen"]   = pd.to_datetime(grid.get("First Seen"), errors="coerce").dt.date
-        grid["Last Seen"]    = pd.to_datetime(grid.get("Last Seen"), errors="coerce").dt.date
-        grid["Weeks On List"] = pd.to_numeric(grid.get("Weeks On List"), errors="coerce").fillna(0).astype(int)
-        grid["This Week"]     = grid.get("This Week").astype(bool)
+
+        # Parse dates
+        for col in ["Last Updated","First Seen","Last Seen"]:
+            grid[col] = pd.to_datetime(grid[col], errors="coerce").dt.date
+
+        grid["Weeks On List"] = pd.to_numeric(grid["Weeks On List"], errors="coerce").fillna(0).astype(int)
+        grid["This Week"] = grid["This Week"].astype(bool)
 
         nrows = max(8, len(grid))
         editor_height = max(500, min(1000, 120 + 38 * nrows))
@@ -301,52 +322,48 @@ def render_wfp_tab(sidebar_root):
             use_container_width=True,
             num_rows="dynamic",
             height=editor_height,
+            key="wfp_editor",
             column_config={
                 "Task ID": st.column_config.TextColumn("Task ID"),
                 "Property": st.column_config.TextColumn("Property"),
                 "PO": st.column_config.TextColumn("PO"),
-                "Status": st.column_config.SelectboxColumn("Status", options=columns_order + [""] ),
+                "Status": st.column_config.SelectboxColumn("Status", options=columns_order + [""]),
                 "Notes": st.column_config.TextColumn("Notes", width="medium"),
-                "Weeks On List": st.column_config.NumberColumn("Weeks On List", step=1, format="%d"),
+                "Weeks On List": st.column_config.NumberColumn("Weeks On List", step=1),
                 "First Seen": st.column_config.DateColumn("First Seen", format="YYYY-MM-DD"),
                 "Last Seen": st.column_config.DateColumn("Last Seen", format="YYYY-MM-DD"),
                 "This Week": st.column_config.CheckboxColumn("This Week"),
                 "Last Updated": st.column_config.DateColumn("Last Updated", format="YYYY-MM-DD"),
             },
-            key="wfp_editor",
         )
 
-        if st.button("💾 Save all changes to GitHub", key="wfp_bulk_save"):
+        if st.button("💾 Save all changes", key="wfp_bulk_save"):
             out = edited.copy()
 
-            # Date serialization
+            # Convert dates back to strings
             for dcol in ["Last Updated","First Seen","Last Seen"]:
                 out[dcol] = out[dcol].apply(lambda d: d.isoformat() if pd.notna(d) and d != "" else "")
 
             out["Weeks On List"] = pd.to_numeric(out["Weeks On List"], errors="coerce").fillna(0).astype(int)
             out["This Week"] = out["This Week"].astype(bool)
 
-            need_cols = ["Task ID","Property","PO","Status","Notes","Last Updated",
-                         "First Seen","Last Seen","Weeks On List","This Week"]
-
+            # Ensure all columns exist
             for c in need_cols:
                 if c not in out.columns:
                     out[c] = ""
 
             full = df.copy().set_index("Task ID")
-            out  = out.set_index("Task ID")
+            out = out.set_index("Task ID")
 
+            # overwrite corresponding rows
             full.loc[out.index, need_cols[1:]] = out[need_cols[1:]]
             full = full.reset_index()
 
-            save_wfp(full, message="Waiting for Parts: bulk update")
-            st.success("Saved changes to GitHub.")
+            save_wfp(full, message="WFP bulk update")
+            st.success("Saved.")
             st.rerun()
 
     else:
-        styled = _colorize_wfp(view.copy())
+        styled = _color_grid(view.copy())
         st.dataframe(styled, use_container_width=True)
-        st.caption("Tip: switch to ‘Grid view (bulk)’ to edit values.")
-
-
-
+        st.caption("Switch to Grid view to edit values.")
