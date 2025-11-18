@@ -1,5 +1,5 @@
-# models.py — Shared SQLite (Streamlit-safe) + Google Sheet seed + auto-migrate
-# Stable: 2025-11-03.A (Remy sheet: A–G mapped)
+# models.py — Shared SQLite (Streamlit-safe) + optional Google Sheet seed + auto-migrate
+# TDM Service Desk Version — minimal rebrand
 
 from __future__ import annotations
 
@@ -25,21 +25,14 @@ def _get_secret(name: str, default: str = "") -> str:
 
 
 # ===== CONFIG =====
-CSV_URL = _get_secret(
-    "BEARPATH_CSV_URL",
-    # New Sheet (CSV export endpoint)
-    # A: Company Name
-    # B: Full Address
-    # C: Latitude
-    # D: Longitude
-    # E: Frequency of Service (→ pm_type)
-    # F: Hours to Complete (→ pm_hours)
-    # G: Fixed Timing (→ pm_phase)
-    "https://docs.google.com/spreadsheets/d/1ptGWoDcTPp1fh-L_7mmqxEESiWbSO0feav62NnbcYug/gviz/tq?tqx=out:csv",
-)
 
-# Default DB uses a shared in-memory URI; engine may pass a real file path.
-DB_PATH = _get_secret("BEARPATH_DB_PATH", "file:bearpath_db?mode=memory&cache=shared")
+# NOTE:
+# For the TDM Service Desk version, we disable BearPath's Google Sheet import.
+# You may supply a TDM-specific sheet via secrets using TDM_CSV_URL.
+CSV_URL = _get_secret("TDM_CSV_URL", "")
+
+# Default DB uses a shared in-memory URI unless overridden by secrets.
+DB_PATH = _get_secret("TDM_DB_PATH", "file:tdm_service_db?mode=memory&cache=shared")
 
 
 # ===== Data classes =====
@@ -55,9 +48,9 @@ class Office:
 class Tech:
     name: str
     region: str
-    first_appt: str         # "08:30"
-    latest_return: str      # "15:30"
-    max_pms_per_day: int    # e.g., 2
+    first_appt: str
+    latest_return: str
+    max_pms_per_day: int
 
 
 @dataclass
@@ -65,7 +58,7 @@ class Property:
     id: int
     name: str
     customer: str
-    address: str            # mapped from full_address
+    address: str
     city: str
     state: str
     zip: str
@@ -77,16 +70,16 @@ class Property:
 @dataclass
 class MonthJob:
     id: Optional[int]
-    month: str              # "YYYY-MM"
+    month: str
     property_id: int
-    type: str               # "PM", "Quarterly", etc.
+    type: str
     duration_hours: Optional[float]
     priority: Optional[int]
-    fixed_date: Optional[str]          # "YYYY-MM-DD" if pinned
-    phase: Optional[str]               # "early"|"mid"|"late"|None
-    time_window_start: Optional[str]   # "HH:MM"|None
-    time_window_end: Optional[str]     # "HH:MM"|None
-    must_be_last_thursday: int         # 0/1
+    fixed_date: Optional[str]
+    phase: Optional[str]
+    time_window_start: Optional[str]
+    time_window_end: Optional[str]
+    must_be_last_thursday: int
     notes: str
     assigned_tech: Optional[str]
 
@@ -96,20 +89,19 @@ def connect(db_path: str = DB_PATH):
     """
     Connect to SQLite. Uses URI mode only if db_path starts with "file:".
     Adds WAL + busy_timeout and retries around one-time startup tasks to avoid
-    'database table is locked' on Streamlit's concurrent init.
+    'database table is locked' initialization issues.
     """
     use_uri = isinstance(db_path, str) and db_path.startswith("file:")
     con = sqlite3.connect(db_path, uri=use_uri, check_same_thread=False)
     con.row_factory = sqlite3.Row
 
-    # Be resilient to concurrent readers during app boot
     con.execute("PRAGMA journal_mode=WAL;")
     con.execute("PRAGMA synchronous=NORMAL;")
-    con.execute("PRAGMA busy_timeout=15000;")  # 15s wait before 'locked' errors
+    con.execute("PRAGMA busy_timeout=15000;")  # wait up to 15s for locked DB
 
     ensure_schema(con)
 
-    # Retry the write-phase boot steps in case another worker briefly holds a lock
+    # Retry boot tasks in case another Streamlit worker holds a transient lock
     def _retry(fn, tries=5, base_sleep=0.25):
         for i in range(tries):
             try:
@@ -191,17 +183,26 @@ def ensure_schema(con: sqlite3.Connection) -> None:
             zip TEXT,
             lat REAL,
             lon REAL,
-            region TEXT NOT NULL
+            region TEXT NOT NULL,
+
+            pm_type TEXT,
+            pm_hours REAL,
+            pm_priority INTEGER,
+            pm_phase TEXT,
+
+            pm_window_start TEXT,
+            pm_window_end TEXT,
+            pm_last_thursday INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS month_jobs(
             id INTEGER PRIMARY KEY,
-            month TEXT NOT NULL,              -- 'YYYY-MM'
+            month TEXT NOT NULL,
             property_id INTEGER NOT NULL,
             type TEXT,
             duration_hours REAL,
             priority INTEGER,
-            fixed_date TEXT,                  -- 'YYYY-MM-DD'
+            fixed_date TEXT,
             phase TEXT,
             time_window_start TEXT,
             time_window_end TEXT,
@@ -221,15 +222,12 @@ def ensure_schema(con: sqlite3.Connection) -> None:
 # ---------- migrate ----------
 def _migrate_schema(con: sqlite3.Connection) -> None:
     """
-    Ensure legacy DBs have all columns our code expects and **relax** any old UNIQUE indexes
-    that caused 'UNIQUE constraint failed: properties.full_address'.
-    Run inside a short IMMEDIATE transaction to avoid lock contention.
+    Ensure old DBs have expected columns and relaxed indexes.
     """
     cur = con.cursor()
     try:
-        cur.execute("BEGIN IMMEDIATE")  # take a write lock up front
+        cur.execute("BEGIN IMMEDIATE")
 
-        # --- properties: add any missing columns ---
         cols = {row["name"] for row in cur.execute("PRAGMA table_info(properties)").fetchall()}
         needed = [
             ("customer", "TEXT", "NULL"),
@@ -241,23 +239,20 @@ def _migrate_schema(con: sqlite3.Connection) -> None:
             ("lon", "REAL", "NULL"),
             ("region", "TEXT", "'CA'"),
 
-            # NEW optional scheduling defaults per property
-            ("pm_type", "TEXT", "NULL"),          # from 'Frequency of Service' (E)
-            ("pm_hours", "REAL", "NULL"),         # from 'Hours to Complete' (F)
-            ("pm_priority", "INTEGER", "NULL"),   # not in sheet; stays NULL (fallback=3)
-            ("pm_phase", "TEXT", "NULL"),         # from 'Fixed Timing ...' (G)
-            ("pm_window_start", "TEXT", "NULL"),  # not in sheet; optional future
-            ("pm_window_end", "TEXT", "NULL"),    # not in sheet; optional future
-            ("pm_last_thursday", "INTEGER", "0"), # not in sheet; default 0
+            ("pm_type", "TEXT", "NULL"),
+            ("pm_hours", "REAL", "NULL"),
+            ("pm_priority", "INTEGER", "NULL"),
+            ("pm_phase", "TEXT", "NULL"),
+            ("pm_window_start", "TEXT", "NULL"),
+            ("pm_window_end", "TEXT", "NULL"),
+            ("pm_last_thursday", "INTEGER", "0"),
         ]
         for name, decl, default_sql in needed:
             if name not in cols:
                 cur.execute(f"ALTER TABLE properties ADD COLUMN {name} {decl} DEFAULT {default_sql}")
 
-        # normalize region
         cur.execute("UPDATE properties SET region = COALESCE(NULLIF(TRIM(region),''), 'CA')")
 
-        # --- Relax unique constraints safely (drop if present, recreate non-unique) ---
         cur.execute("DROP INDEX IF EXISTS ux_properties_name")
         cur.execute("CREATE INDEX IF NOT EXISTS ix_properties_name ON properties(name)")
         cur.execute("DROP INDEX IF EXISTS ux_properties_full_address")
@@ -273,13 +268,11 @@ def _migrate_schema(con: sqlite3.Connection) -> None:
 # ---------- seeding ----------
 def _seed_reference(con: sqlite3.Connection) -> None:
     """
-    Seed offices and techs idempotently (safe to run multiple times).
+    Seed offices and techs safely (idempotent).
     """
-    # Offices (insert/update; keep existing lat/lon if incoming is None)
-    _ensure_office(con, "CA", "California Office", 33.8446, -118.3295)  # Torrance-ish
-    _ensure_office(con, "NV", "Las Vegas Office", 36.1147, -115.1728)   # Vegas-ish
+    _ensure_office(con, "CA", "California Office", 33.8446, -118.3295)
+    _ensure_office(con, "NV", "Las Vegas Office", 36.1147, -115.1728)
 
-    # Techs — UPSERT each one so missing names get added even if table isn't empty
     tech_rows = [
         ("Amador",   "CA", "08:30", "15:30", 2),
         ("Juan",     "CA", "08:30", "15:30", 2),
@@ -296,45 +289,46 @@ def _seed_reference(con: sqlite3.Connection) -> None:
         INSERT INTO techs(name, region, first_appt, latest_return, max_pms_per_day)
         VALUES(?,?,?,?,?)
         ON CONFLICT(name) DO UPDATE SET
-            region          = excluded.region,
-            first_appt      = excluded.first_appt,
-            latest_return   = excluded.latest_return,
-            max_pms_per_day = excluded.max_pms_per_day
+            region=excluded.region,
+            first_appt=excluded.first_appt,
+            latest_return=excluded.latest_return,
+            max_pms_per_day=excluded.max_pms_per_day
         """,
         tech_rows,
     )
     con.commit()
+
 
 # ---------- Google Sheet import ----------
 def _infer_region(state: str) -> str:
     s = _as_text(state).upper()
     if s == "NV":
         return "NV"
-    return "CA"  # default bucket
+    return "CA"
 
 
 def _import_properties_from_sheet(con: sqlite3.Connection) -> None:
     """
-    Import/update properties from the configured Google Sheet CSV.
-    Runs once per process (idempotent) — guarded by a marker table.
+    Optional sheet import — runs once per process if TDM_CSV_URL is provided.
     """
+    if not CSV_URL:
+        return
+
     con.execute("CREATE TABLE IF NOT EXISTS _imports(marker TEXT PRIMARY KEY, ts TEXT)")
-    done = con.execute("SELECT marker FROM _imports WHERE marker='props_google_csv'").fetchone()
+    done = con.execute("SELECT marker FROM _imports WHERE marker='props_csv'").fetchone()
     if done:
         return
 
-    # ---- load CSV (best-effort) ----
     try:
         df = pd.read_csv(CSV_URL)
     except Exception:
-        # mark as done to prevent loops if the sheet isn't reachable
         con.execute(
-            "INSERT OR REPLACE INTO _imports(marker, ts) VALUES('props_google_csv', datetime('now'))"
+            "INSERT OR REPLACE INTO _imports(marker, ts) VALUES('props_csv', datetime('now'))"
         )
         con.commit()
         return
 
-    # ---- tolerant column mapping ----
+    # Helper to pick tolerant column names
     def pick(df, variants: Iterable[str]) -> Optional[str]:
         for c in df.columns:
             for v in variants:
@@ -342,21 +336,16 @@ def _import_properties_from_sheet(con: sqlite3.Connection) -> None:
                     return c
         return None
 
-    # Exact headers (A–G) with safe aliases
     col_company  = pick(df, ["Company Name", "Company", "Property", "Property Name"])
     col_fulladdr = pick(df, ["Full Address", "Address"])
     col_lat      = pick(df, ["Latitude", "lat"])
     col_lon      = pick(df, ["Longitude", "lon", "lng"])
-
-    # Optional basics (not present in this sheet—left tolerant for future)
     col_city     = pick(df, ["City"])
-    col_state    = pick(df, ["State", "ST"])
-    col_zip      = pick(df, ["Zip", "Zip Code", "Postal Code"])
-
-    # NEW: scheduling defaults from your sheet
-    col_pm_type  = pick(df, ["Frequency of Service", "PM Type", "Type"])
-    col_pm_hours = pick(df, ["Hours to Complete", "PM Hours", "Hours", "Duration"])
-    col_pm_phase = pick(df, ["Fixed Timing (Early, Mid, Late, Tuesday, Thursday, etc)", "Fixed Timing", "PM Phase", "Phase"])
+    col_state    = pick(df, ["State"])
+    col_zip      = pick(df, ["Zip", "Zip Code"])
+    col_pm_type  = pick(df, ["Frequency of Service", "PM Type"])
+    col_pm_hours = pick(df, ["Hours to Complete", "PM Hours"])
+    col_pm_phase = pick(df, ["Fixed Timing", "PM Phase"])
 
     def val(row, col) -> str:
         if not col:
@@ -364,47 +353,45 @@ def _import_properties_from_sheet(con: sqlite3.Connection) -> None:
         v = row.get(col, "")
         return "" if pd.isna(v) else str(v)
 
-    # ---- UPDATE-or-INSERT (no ON CONFLICT dependency) ----
+    # Upsert logic
     for _, row in df.iterrows():
         name = val(row, col_company).strip()
         if not name:
             continue
 
+        full   = val(row, col_fulladdr)
         city   = val(row, col_city)
         state  = val(row, col_state)
         zipc   = val(row, col_zip)
-        full   = val(row, col_fulladdr)
         lat    = _as_float(row.get(col_lat, None) if col_lat else None)
         lon    = _as_float(row.get(col_lon, None) if col_lon else None)
         region = _infer_region(state)
 
-        # Scheduling defaults from the sheet
-        pm_type  = (val(row, col_pm_type) or None)
+        pm_type  = val(row, col_pm_type) or None
         raw_hours = val(row, col_pm_hours)
         try:
             pm_hours = float(raw_hours) if raw_hours not in ("", None) else None
         except Exception:
-            # Handle things like "3 hrs", "3.0", or "3.5 hours"
             import re
             m = re.search(r"(\d+(\.\d+)?)", str(raw_hours))
             pm_hours = float(m.group(1)) if m else None
-        pm_phase = (val(row, col_pm_phase) or None)
+        pm_phase = val(row, col_pm_phase) or None
 
-        existing = con.execute("SELECT id FROM properties WHERE name = ?", (name,)).fetchone()
+        existing = con.execute("SELECT id FROM properties WHERE name=?", (name,)).fetchone()
         if existing:
             con.execute(
                 """
                 UPDATE properties SET
                     customer=?, full_address=?, city=?, state=?, zip=?,
-                    lat=COALESCE(?, lat), lon=COALESCE(?, lon), region=?,
-                    pm_type=COALESCE(?, pm_type),
-                    pm_hours=COALESCE(?, pm_hours),
-                    pm_phase=COALESCE(?, pm_phase)
+                    lat=COALESCE(?,lat), lon=COALESCE(?,lon), region=?,
+                    pm_type=COALESCE(?,pm_type),
+                    pm_hours=COALESCE(?,pm_hours),
+                    pm_phase=COALESCE(?,pm_phase)
                 WHERE id=?
                 """,
                 (name, full, city, state, zipc, lat, lon, region,
                  pm_type, pm_hours, pm_phase,
-                 int(existing['id'])),
+                 int(existing["id"])),
             )
         else:
             con.execute(
@@ -419,7 +406,7 @@ def _import_properties_from_sheet(con: sqlite3.Connection) -> None:
             )
 
     con.execute(
-        "INSERT OR REPLACE INTO _imports(marker, ts) VALUES('props_google_csv', datetime('now'))"
+        "INSERT OR REPLACE INTO _imports(marker, ts) VALUES('props_csv', datetime('now'))"
     )
     con.commit()
 
@@ -457,28 +444,25 @@ import re
 
 def _norm_name(s: str) -> str:
     s = _as_text(s).lower()
-    # normalize dashes/spaces, strip most punctuation except & and alphanumerics
-    s = re.sub(r"[–—−\-]+", " ", s)         # any dash-ish -> space
-    s = re.sub(r"[^\w\s&]", "", s)          # drop punctuation except word chars, space, &
+    s = re.sub(r"[–—−\-]+", " ", s)
+    s = re.sub(r"[^\w\s&]", "", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
 
 def search_properties_by_company(
     con: sqlite3.Connection,
     query: str,
     region: Optional[str] = None,
     limit: int = 50,
-    # legacy kw the UI sometimes passes:
     region_filter: Optional[str] = None,
 ) -> List[Property]:
     """
     Exact-first (normalized) search, then fuzzy contains.
-    Accepts either `region` or `region_filter`.
     """
     _region = region if region is not None else region_filter
     norm_q = _norm_name(query)
 
-    # Pull candidates (scoped by region if provided). We keep this simple & robust.
     if _region:
         rows = con.execute("SELECT * FROM properties WHERE region=?", (_region,)).fetchall()
     else:
@@ -488,14 +472,12 @@ def search_properties_by_company(
     fuzzy: List[sqlite3.Row] = []
 
     for r in rows:
-        nm = _as_text(r["name"])
-        nm_norm = _norm_name(nm)
+        nm_norm = _norm_name(_as_text(r["name"]))
         if nm_norm == norm_q:
             exact.append(r)
-        elif norm_q and (norm_q in nm_norm):
+        elif norm_q and norm_q in nm_norm:
             fuzzy.append(r)
 
-    # Prefer exacts, fall back to fuzzies, cap by limit
     hits = (exact + fuzzy)[:limit]
 
     out: List[Property] = []
@@ -516,16 +498,13 @@ def search_properties_by_company(
         )
     return out
 
-# Small helper for UI defaults; returns (type, hours, priority, notes)
+
 def fetch_pm_defaults(con: sqlite3.Connection, property_id: int) -> Tuple[str, float, int, str]:
     """
-    Use per-property defaults when available; sane fallbacks otherwise.
-    pm_type  ← 'Frequency of Service' (E)    → default 'PM'
-    pm_hours ← 'Hours to Complete' (F)       → default 1.0
-    pm_priority                                default 3 (no column in sheet yet)
+    Return PM defaults from properties: (type, hours, priority, notes).
     """
     r = con.execute(
-        "SELECT pm_type, pm_hours, pm_priority FROM properties WHERE id = ?",
+        "SELECT pm_type, pm_hours, pm_priority FROM properties WHERE id=?",
         (property_id,)
     ).fetchone()
     typ = (r["pm_type"] if r and r["pm_type"] else "PM")
@@ -552,8 +531,7 @@ def insert_month_job(
     assigned_tech: Optional[str] = None,
 ) -> int:
     """
-    Insert one MonthJob. `month` may be 'YYYY-MM' or a full date 'YYYY-MM-DD'.
-    We normalize it to 'YYYY-MM' on write.
+    Insert a MonthJob. Normalizes month to 'YYYY-MM'.
     """
     norm = _norm_month(month)
     cur = con.execute(
@@ -589,10 +567,8 @@ def list_month_jobs(
     region: str,
 ) -> List[Tuple[MonthJob, Property]]:
     """
-    Return ONLY the jobs explicitly added for `month` (and optionally `region`),
-    as a list of (MonthJob, Property) tuples expected by the engine.
-    Accepts 'YYYY-MM' and any 'YYYY-MM-%' via prefix match.
-    Region predicate is forgiving for empty property regions.
+    Return jobs for month, joined with properties.
+    Accepts exact 'YYYY-MM' or prefix 'YYYY-MM-%'.
     """
     sql = """
         SELECT
@@ -670,13 +646,13 @@ def list_month_jobs(
 # ---------- export: real .db file ----------
 def export_db_to_tempfile(con: Optional[sqlite3.Connection] = None) -> str:
     """
-    Create a real on-disk SQLite .db file containing the current DB contents
-    and return its path. If no connection is provided, open a fresh one.
+    Create an on-disk SQLite .db file containing the current DB contents
+    and return its path. If no connection is provided, open one fresh.
     """
     if con is None:
         con = connect()
 
-    fd, path = tempfile.mkstemp(prefix="bearpath_", suffix=".db")
+    fd, path = tempfile.mkstemp(prefix="tdm_service_", suffix=".db")
     os.close(fd)
 
     disk_con = sqlite3.connect(path, check_same_thread=False)
@@ -687,64 +663,3 @@ def export_db_to_tempfile(con: Optional[sqlite3.Connection] = None) -> str:
         disk_con.close()
 
     return path
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
